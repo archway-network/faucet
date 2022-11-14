@@ -1,10 +1,10 @@
-package faucet_test
+package environ_test
 
 import (
 	"os"
 	"testing"
 
-	"github.com/archway-network/faucet/pkg/faucet"
+	"github.com/archway-network/faucet/pkg/environ"
 )
 
 func TestEnviron(t *testing.T) {
@@ -20,15 +20,15 @@ func TestEnviron(t *testing.T) {
 		t.Fatalf("wrong initialization")
 	}
 
-	if faucet.EnvGetInt("integer", -1) != -1 {
+	if environ.EnvGetInt("integer", -1) != -1 {
 		t.Fatalf("wanted -1")
 	}
 
-	if faucet.EnvGetUint64("unsigned", 10) != 10 {
+	if environ.EnvGetUint64("unsigned", 10) != 10 {
 		t.Fatalf("wanted 10")
 	}
 
-	if faucet.EnvGetString("string", "example") != "example" {
+	if environ.EnvGetString("string", "example") != "example" {
 		t.Fatalf("wanted example")
 	}
 
@@ -46,15 +46,15 @@ func TestEnviron(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if faucet.EnvGetInt("integer", -5) != -1 {
+	if environ.EnvGetInt("integer", -5) != -1 {
 		t.Fatalf("wanted -1")
 	}
 
-	if faucet.EnvGetUint64("unsigned", 15) != 10 {
+	if environ.EnvGetUint64("unsigned", 15) != 10 {
 		t.Fatalf("wanted 10")
 	}
 
-	if faucet.EnvGetString("string", "invalid") != "example" {
+	if environ.EnvGetString("string", "invalid") != "example" {
 		t.Fatalf("wanted example")
 	}
 }

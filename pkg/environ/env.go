@@ -1,4 +1,4 @@
-package faucet
+package environ
 
 import (
 	"os"

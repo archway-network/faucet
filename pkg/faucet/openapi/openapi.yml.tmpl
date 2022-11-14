@@ -3,7 +3,7 @@ swagger: "2.0"
 info:
   description: "Faucet API"
   version: "1.0.0"
-  title: "Faucet for {{ .ChainID }}"
+  title: "Faucet for {{.}}"
 
 servers:
   - url: / 
@@ -11,7 +11,7 @@ servers:
 paths:
   /:
     post:
-      summary: "Send tokens to receiver account"
+      summary: "Send tokens to receiver account address"
       consumes:
       - "application/json"
       produces:
@@ -19,7 +19,7 @@ paths:
       parameters:
       - in: "body"
         name: "body"
-        description: "Send coins request object\n\nAfter making a sample execution by the 'Try it out' button in the right corner, visit the following link to see the difference in sample account's balance: {{ .APIAddress }}/bank/balances/cosmos1uzv4v9g9xln2qx2vtqhz99yxum33calja5vruz"
+        description: "Send coins request object\n\nAfter making a sample execution by the 'Try it out' button in the right corner."
         required: true
         schema:
           $ref: "#/definitions/SendRequest"
@@ -29,7 +29,7 @@ paths:
         "500":
           description: "Internal error"
         "200":
-          description: "All coins are successfully sent\n\nAfter making a sample execution, visit the following link to see the difference in sample account's balance: {{ .APIAddress }}/bank/balances/cosmos1uzv4v9g9xln2qx2vtqhz99yxum33calja5vruz"
+          description: "All coins are successfully sent"
           schema:
             $ref: "#/definitions/SendResponse"
 
@@ -41,7 +41,7 @@ definitions:
     properties:
       address:
         type: "string"
-        default: "cosmos1uzv4v9g9xln2qx2vtqhz99yxum33calja5vruz"
+        default: "<receiver_account_address>"
       coins:
         type: "array"
         default:
