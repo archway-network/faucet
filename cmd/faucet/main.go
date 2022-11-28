@@ -11,52 +11,87 @@ import (
 	"github.com/archway-network/faucet/pkg/faucet"
 )
 
-func main() {
-	faucet := faucet.Faucet{}
+var (
+	// HTTP Server configuration
+	port                  int
+	logLevel              string
+	maxCoinsPerAccount    string
+	maxCoinsPerRequest    string
+	faucetAccountMnemonic string
 
-	flag.StringVar(&faucet.LogLevel, "log-level",
+	// Blockchain App configuration
+	appBinaryName string
+	appHome       string
+	appChainID    string
+	appNode       string // RPC Node to be used with the .
+
+	// Transfer tx configuration
+	txGasAdjustment string
+	txBroadcastMode string
+	txGasPrices     string
+)
+
+func main() {
+	// HTTP Server configuration
+	flag.IntVar(&port, "port",
+		environ.EnvGetInt("PORT", 8000),
+		"Port for the faucet server to listen on")
+	flag.StringVar(&logLevel, "log-level",
 		environ.EnvGetString("LOG_LEVEL", "info"),
 		"log level (trace, debug, info, warn or error)")
-	flag.StringVar(&faucet.Node, "node",
-		environ.EnvGetString("NODE", ""),
-		"RPC address of the node to connect to")
-	flag.StringVar(&faucet.Denoms, "denom",
-		environ.EnvGetString("DENOMs", "utitus"),
-		"Comma seperated list of token denoms to be distributed by the fuacet")
-	flag.StringVar(&faucet.TotalMaxAmount, "max-amount",
-		environ.EnvGetString("TOTAL_MAX_AMOUNT", "10000000uarch"),
-		"Total amount of tokens allowed per address")
-	flag.StringVar(&faucet.MaxAmountPerRequest, "max-amount-per-request",
-		environ.EnvGetString("MAX_AMOUNT_PER_REQUEST", "1000000uarch"),
-		"Total amount of tokens allowed per request")
-	flag.StringVar(&faucet.BinaryName, "binary-name",
-		environ.EnvGetString("BINARY_NAME", "archwayd"),
+	flag.StringVar(&maxCoinsPerAccount, "max-coins-per-account",
+		environ.EnvGetString("MAX_COINS_PER_ACCOUNT", "10000000uarch"),
+		"Comma seperated list of total amount of tokens allowed per address")
+	flag.StringVar(&maxCoinsPerRequest, "max-coins-per-request",
+		environ.EnvGetString("MAX_COINS_PER_REQUEST", "1000000uarch"),
+		"Comma seperated list of total amount of tokens allowed per request")
+	flag.StringVar(&faucetAccountMnemonic, "faucet-account-mnemonic",
+		environ.EnvGetString("FAUCET_ACCOUNT_MNEMONIC", ""),
+		"Mnemonic for the faucet account")
+
+	// Blockchain App configuration
+	flag.StringVar(&appBinaryName, "app-binary-name",
+		environ.EnvGetString("APP_BINARY_NAME", "archwayd"),
 		"Name of the chain binary to be used for the faucet")
-	flag.IntVar(&faucet.Port, "port",
-		environ.EnvGetInt("PORT", 8000),
-		"Port on which the faucet server listens on")
-	flag.StringVar(&faucet.Home, "home",
-		environ.EnvGetString("HOME", ""),
+	flag.StringVar(&appHome, "app-home",
+		environ.EnvGetString("APP_HOME", ""),
 		"Home directory for blockchain config")
-	flag.StringVar(&faucet.GasAdjustment, "gas-adjustment",
-		environ.EnvGetString("GAS_ADJUSTMENT", "1.5"),
-		"Gas adjustment for the transaction")
-	flag.StringVar(&faucet.BroadcastMode, "broadcast-mode",
-		environ.EnvGetString("BROADCAST_MODE", "block"),
-		"Broadcast mode for the transaction")
-	flag.StringVar(&faucet.GasPrices, "gas-prices",
-		environ.EnvGetString("GAS_PRICES", "0.025uarch"),
-		"Gas prices for the transaction")
-	flag.StringVar(&faucet.ChainID, "chain-id",
+	flag.StringVar(&appChainID, "chain-id",
 		environ.EnvGetString("CHAIN_ID", "archway-1"),
 		"Chain ID for the transaction")
-	flag.StringVar(&faucet.AccountMnemonic, "account-mnemonic",
-		environ.EnvGetString("ACCOUNT_MNEMONIC", ""),
-		"Mnemonic for the faucet account")
+	flag.StringVar(&appNode, "app-node",
+		environ.EnvGetString("APP_NODE", ""),
+		"RPC address of the node to connect to")
+
+	// Transfer tx configuration
+	flag.StringVar(&txGasAdjustment, "tx-gas-adjustment",
+		environ.EnvGetString("TX_GAS_ADJUSTMENT", "1.5"),
+		"Gas adjustment for the transaction")
+	flag.StringVar(&txBroadcastMode, "tx-broadcast-mode",
+		environ.EnvGetString("TX_BROADCAST_MODE", "block"),
+		"Broadcast mode for the transaction")
+	flag.StringVar(&txGasPrices, "tx-gas-prices",
+		environ.EnvGetString("TX_GAS_PRICES", "0.025uarch"),
+		"Gas prices for the transaction")
 
 	flag.Parse()
 
-	http.HandleFunc("/", faucet.ServeHTTP)
-	log.Infof("listening on :%d", faucet.Port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", faucet.Port), nil))
+	// Create a new faucet.
+	f := faucet.New(port,
+		faucet.WithAppBinaryName(appBinaryName),
+		faucet.WithAppHome(appHome),
+		faucet.WithLogLevel(logLevel),
+		faucet.WithMaxCoinsPerAccount(maxCoinsPerAccount),
+		faucet.WithMaxCoinsPerRequest(maxCoinsPerRequest),
+		faucet.WithFaucetAccountMnemonic(faucetAccountMnemonic),
+		faucet.WithAppChainID(appChainID),
+		faucet.WithAppNode(appNode),
+		faucet.WithTxGasAdjustment(txGasAdjustment),
+		faucet.WithTxBroadcastMode(txBroadcastMode),
+		faucet.WithTxGasPrices(txGasPrices),
+	)
+
+	http.HandleFunc("/", f.ServeHTTP)
+	log.Infof("listening on :%d", f.Port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", f.Port), nil))
 }

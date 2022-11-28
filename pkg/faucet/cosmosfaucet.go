@@ -11,19 +11,13 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 
-	// sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ghodss/yaml"
-	"github.com/gorilla/mux"
-	"github.com/rs/cors"
 
 	"github.com/ignite/cli/ignite/pkg/cmdrunner"
 	"github.com/ignite/cli/ignite/pkg/cmdrunner/step"
-	"github.com/ignite/cli/ignite/pkg/xhttp"
 )
 
 const (
@@ -48,51 +42,6 @@ var (
 	index embed.FS
 )
 
-type Faucet struct {
-	LogLevel            string
-	Node                string
-	Denoms              string
-	TotalMaxAmount      string
-	MaxAmountPerRequest string
-	BinaryName          string
-	Port                int
-	AccountMnemonic     string
-	AccountAddress      string
-	Home                string
-	GasAdjustment       string
-	BroadcastMode       string
-	GasPrices           string
-	ChainID             string
-}
-type Account struct {
-	Name     string `json:"name"`
-	Address  string `json:"address"`
-	Mnemonic string `json:"mnemonic,omitempty"`
-}
-
-type TransferRequest struct {
-	// AccountAddress to request coins for.
-	AccountAddress string `json:"address"`
-
-	// Coins that are requested.
-	// default ones used when this one isn't provided.
-	Coins []string `json:"coins"`
-}
-
-type TransferResponse struct {
-	Error string `json:"error,omitempty"`
-}
-type Event struct {
-	Type       string
-	Attributes []EventAttribute
-	Time       time.Time
-}
-
-type EventAttribute struct {
-	Key   string
-	Value string
-}
-
 func (f Faucet) CheckAccountAdded() error {
 	command := []string{
 		"keys", "list", "--keyring-backend", "test", "--output", "json",
@@ -100,7 +49,7 @@ func (f Faucet) CheckAccountAdded() error {
 
 	cmdOutputBuffer := new(bytes.Buffer)
 	keysListStepOptions := []step.Option{
-		step.Exec(f.BinaryName, command...),
+		step.Exec(f.AppBinaryName, command...),
 		step.Stderr(os.Stderr),
 		step.Stdout(io.MultiWriter(os.Stdout, cmdOutputBuffer)),
 	}
@@ -133,12 +82,33 @@ func (f Faucet) CheckAccountAdded() error {
 	// search for the account name
 	for _, account := range accounts {
 		if account.Name == DefaultFaucetAccountName {
-			f.AccountAddress = account.Address
+			f.faucetAccountAddress = account.Address
 			return nil
 		}
 	}
 	return ErrAccountDoesNotExist
 }
+
+// func (f Faucet) ValidateRequest(req TransferRequest) error {
+// 	if len(req.Coins) == 0 {
+// 		return errors.New("no coins provided")
+// 	}
+
+// 	coin, err := sdk.ParseCoinNormalized(req.Coins[0])
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	total, err := f.TotalTransferredAmount(req)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	// if f.TotalMaxAmount < total {
+// 	// 	return errors.New("total amount of coins requested is over the limit")
+// 	// }
+
+// }
 
 func (f Faucet) Transfer(req TransferRequest) error {
 	// init variables
@@ -151,11 +121,11 @@ func (f Faucet) Transfer(req TransferRequest) error {
 	if err == ErrAccountDoesNotExist {
 		// Add execution step to add faucet account
 		input := &bytes.Buffer{}
-		fmt.Fprintln(input, f.AccountMnemonic)
+		fmt.Fprintln(input, f.FaucetAccountMnemonic)
 
 		command = []string{"keys", "add", "faucet-account", "--keyring-backend", "test", "--recover"}
 		txStepOptions = []step.Option{
-			step.Exec(f.BinaryName, command...),
+			step.Exec(f.AppBinaryName, command...),
 			step.Stderr(os.Stderr),
 			step.Stdout(os.Stdout),
 			step.Stdin(input),
@@ -167,13 +137,13 @@ func (f Faucet) Transfer(req TransferRequest) error {
 
 	command = []string{
 		"tx", "bank", "send", DefaultFaucetAccountName, req.AccountAddress, strings.Join(req.Coins, ","),
-		"--node", f.Node, "--output", "json", "--chain-id", f.ChainID, "--gas-adjustment",
-		f.GasAdjustment, "--broadcast-mode", f.BroadcastMode, "--yes", "--gas-prices", f.GasPrices,
+		"--node", f.AppNode, "--output", "json", "--chain-id", f.AppChainID, "--gas-adjustment",
+		f.TxGasAdjustment, "--broadcast-mode", f.TxBroadcastMode, "--yes", "--gas-prices", f.TxGasPrices,
 		"--log_level", f.LogLevel, "--keyring-backend", "test",
 	}
 
 	txStepOptions = []step.Option{
-		step.Exec(f.BinaryName, command...),
+		step.Exec(f.AppBinaryName, command...),
 		step.Stderr(os.Stderr),
 		step.Stdout(os.Stdout),
 	}
@@ -195,7 +165,6 @@ func (f Faucet) Transfer(req TransferRequest) error {
 // 		"--page", "1", "--limit", "2", "--node", f.Node,
 // 		"--output", "json", "--chain-id", f.ChainID}
 
-// 	//
 // 	cmdOutputBuffer := new(bytes.Buffer)
 
 // 	cmdStdOut := io.MultiWriter(os.Stdout, cmdOutputBuffer)
@@ -210,7 +179,7 @@ func (f Faucet) Transfer(req TransferRequest) error {
 // 	err = cmdrunner.New().Run(context.Background(), step)
 
 // 	if err != nil {
-// 		fmt.Printf("Error: %v", err)
+// 		return 0, err
 // 	}
 
 // 	out := struct {
@@ -232,10 +201,6 @@ func (f Faucet) Transfer(req TransferRequest) error {
 // 	if err != nil {
 // 		return 0, err
 // 	}
-// 	if err := json.Unmarshal(data, &out); err != nil {
-// 		return 0, err
-// 	}
-
 // 	if err := json.Unmarshal(data, &out); err != nil {
 // 		return 0, err
 // 	}
@@ -290,25 +255,6 @@ func (f Faucet) Transfer(req TransferRequest) error {
 // 	return totalAmount, nil
 // }
 
-// coinsFromRequest determines tokens to transfer from transfer request.
-// func (f Faucet) coinsFromRequest(req TransferRequest) (sdk.Coins, error) {
-// 	if len(req.Coins) == 0 {
-// 		// TODO: return error message that no coins are provided.
-// 		return nil, nil
-// 	}
-
-// 	var coins []sdk.Coin
-// 	for _, c := range req.Coins {
-// 		coin, err := sdk.ParseCoinNormalized(c)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		coins = append(coins, coin)
-// 	}
-
-// 	return coins, nil
-// }
-
 // JSONEnsuredBytes ensures that encoding format for returned bytes is always
 // JSON even if the written data is originally encoded in YAML.
 func JSONEnsuredBytes(bytes []byte) ([]byte, error) {
@@ -320,73 +266,4 @@ func JSONEnsuredBytes(bytes []byte) ([]byte, error) {
 	}
 
 	return bytes, nil
-}
-
-// ServeHTTP implements http.Handler to expose the functionality of Faucet.Transfer() via HTTP.
-// request/response payloads are compatible with the previous implementation at allinbits/cosmos-faucet.
-func (f Faucet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	router := mux.NewRouter()
-
-	router.
-		Handle("/", cors.Default().Handler(http.HandlerFunc(f.faucetHandler))).
-		Methods(http.MethodPost, http.MethodOptions)
-
-	router.
-		HandleFunc("/", OpenAPIHandler("Faucet", "openapi.yml")).
-		Methods(http.MethodGet)
-
-	router.
-		HandleFunc("/openapi.yml", f.openAPISpecHandler).
-		Methods(http.MethodGet)
-
-	router.ServeHTTP(w, r)
-}
-
-func (f Faucet) faucetHandler(w http.ResponseWriter, r *http.Request) {
-	var req TransferRequest
-
-	// decode request into req.
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		responseError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	// try performing the transfer
-	if err := f.Transfer(req); err != nil {
-		if err == context.Canceled {
-			return
-		}
-		responseError(w, http.StatusInternalServerError, err)
-	} else {
-		responseSuccess(w)
-	}
-}
-
-func responseSuccess(w http.ResponseWriter) {
-	xhttp.ResponseJSON(w, http.StatusOK, TransferResponse{})
-}
-
-func responseError(w http.ResponseWriter, code int, err error) {
-	xhttp.ResponseJSON(w, code, TransferResponse{
-		Error: err.Error(),
-	})
-}
-
-func (f Faucet) openAPISpecHandler(w http.ResponseWriter, r *http.Request) {
-	tmplOpenAPISpec.Execute(w, f.ChainID)
-}
-
-// Handler returns an http handler that servers OpenAPI console for an OpenAPI spec at specURL.
-func OpenAPIHandler(title, specURL string) http.HandlerFunc {
-	t, _ := template.ParseFS(index, "openapi/index.tpl")
-
-	return func(w http.ResponseWriter, req *http.Request) {
-		t.Execute(w, struct {
-			Title string
-			URL   string
-		}{
-			title,
-			specURL,
-		})
-	}
 }
