@@ -56,8 +56,8 @@ func main() {
 	flag.StringVar(&appHome, "app-home",
 		environ.EnvGetString("APP_HOME", ""),
 		"Home directory for blockchain config")
-	flag.StringVar(&appChainID, "chain-id",
-		environ.EnvGetString("CHAIN_ID", "archway-1"),
+	flag.StringVar(&appChainID, "app-chain-id",
+		environ.EnvGetString("APP_CHAIN_ID", "archway-1"),
 		"Chain ID for the transaction")
 	flag.StringVar(&appNode, "app-node",
 		environ.EnvGetString("APP_NODE", ""),
@@ -77,7 +77,7 @@ func main() {
 	flag.Parse()
 
 	// Create a new faucet.
-	f := faucet.New(port,
+	f, err := faucet.New(port,
 		faucet.WithAppBinaryName(appBinaryName),
 		faucet.WithAppHome(appHome),
 		faucet.WithLogLevel(logLevel),
@@ -90,6 +90,9 @@ func main() {
 		faucet.WithTxBroadcastMode(txBroadcastMode),
 		faucet.WithTxGasPrices(txGasPrices),
 	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	http.HandleFunc("/", f.ServeHTTP)
 	log.Infof("listening on :%d", f.Port)

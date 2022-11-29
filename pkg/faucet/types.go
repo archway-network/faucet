@@ -1,11 +1,20 @@
 package faucet
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/ignite/cli/ignite/pkg/cmdrunner"
+	"github.com/ignite/cli/ignite/pkg/cmdrunner/step"
 )
 
 // Option configures Faucet.
@@ -45,8 +54,7 @@ type TransferRequest struct {
 	AccountAddress string `json:"address"`
 
 	// Coins that are requested.
-	// Coins sdk.Coins `json:"coins"`
-	Coins []string `json:"coins"`
+	Coins sdk.Coins `json:"coins"`
 }
 
 type TransferResponse struct {
@@ -168,7 +176,7 @@ func WithTxGasPrices(p string) Option {
 	}
 }
 
-func New(port int, options ...Option) *Faucet {
+func New(port int, options ...Option) (*Faucet, error) {
 	f := &Faucet{
 		Port: port,
 	}
@@ -176,5 +184,66 @@ func New(port int, options ...Option) *Faucet {
 	for _, opt := range options {
 		opt(f)
 	}
-	return f
+
+	// clean up the test keyring
+	if err := f.ResetTestKeyring(filepath.Join(f.AppHome, "keyring-test")); err != nil {
+		return nil, err
+	}
+
+	// init variables
+	command := []string{}
+	txStepOptions := []step.Option{}
+	steps := []*step.Step{}
+	cmdOutputBuffer := new(bytes.Buffer)
+
+	// Add execution step to add faucet account
+	input := &bytes.Buffer{}
+	fmt.Fprintln(input, f.FaucetAccountMnemonic)
+
+	command = []string{"keys", "add", "faucet-account", "--keyring-backend", "test", "--home",
+		f.AppHome, "--recover", "--output", "json"}
+	txStepOptions = []step.Option{
+		step.Exec(f.AppBinaryName, command...),
+		step.Stderr(os.Stderr),
+		step.Stdout(io.MultiWriter(os.Stdout, cmdOutputBuffer)),
+		step.Stdin(input),
+	}
+	steps = append(steps, step.New(txStepOptions...))
+	err := cmdrunner.New().Run(context.Background(), steps...)
+
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := JSONEnsuredBytes(cmdOutputBuffer.Bytes())
+	if err != nil {
+		return nil, err
+	}
+	// get and decodes all accounts of the chains
+	var account Account
+	if err := json.Unmarshal(data, &account); err != nil {
+		return nil, err
+	}
+	f.faucetAccountAddress = account.Address
+
+	return f, nil
+}
+
+func (f *Faucet) ResetTestKeyring(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	names, err := d.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		err = os.RemoveAll(filepath.Join(dir, name))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"strings"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/gorilla/mux"
 	"github.com/ignite/cli/ignite/pkg/xhttp"
 	"github.com/rs/cors"
@@ -32,12 +34,36 @@ func (f Faucet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f Faucet) faucetHandler(w http.ResponseWriter, r *http.Request) {
-	var req TransferRequest
 
-	// decode request into req.
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	body := struct {
+		// AccountAddress to request coins for.
+		AccountAddress string `json:"address"`
+
+		// Coins that are requested.
+		Coins []string `json:"coins"`
+	}{}
+
+	// decode request into body struct.
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		responseError(w, http.StatusBadRequest, err)
 		return
+	}
+
+	coins, err := sdk.ParseCoinsNormalized(strings.Join(body.Coins, ","))
+	if err != nil {
+		responseError(w, http.StatusBadRequest, err)
+	}
+
+	var req TransferRequest = TransferRequest{
+		AccountAddress: body.AccountAddress,
+		Coins:          coins,
+	}
+	// validate request.
+	if err := f.ValidateRequest(req); err != nil {
+		if err == context.Canceled {
+			return
+		}
+		responseError(w, http.StatusInternalServerError, err)
 	}
 
 	// try performing the transfer

@@ -13,7 +13,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ghodss/yaml"
 
 	"github.com/ignite/cli/ignite/pkg/cmdrunner"
@@ -82,33 +84,134 @@ func (f Faucet) CheckAccountAdded() error {
 	// search for the account name
 	for _, account := range accounts {
 		if account.Name == DefaultFaucetAccountName {
-			f.faucetAccountAddress = account.Address
 			return nil
 		}
 	}
 	return ErrAccountDoesNotExist
 }
+func (f Faucet) ValidateRequest(req TransferRequest) error {
+	if req.Coins == nil {
+		return errors.New("no coins provided")
+	}
 
-// func (f Faucet) ValidateRequest(req TransferRequest) error {
-// 	if len(req.Coins) == 0 {
-// 		return errors.New("no coins provided")
-// 	}
+	if req.AccountAddress == "" {
+		return errors.New("no account address provided")
+	}
 
-// 	coin, err := sdk.ParseCoinNormalized(req.Coins[0])
-// 	if err != nil {
-// 		return err
-// 	}
+	for _, coin := range req.Coins {
+		if f.MaxCoinsPerRequest[coin.Denom].LT(coin.Amount) {
+			return fmt.Errorf("coin amount %s is greater than max allowed per request of %s", coin.String(), f.MaxCoinsPerRequest[coin.Denom].String())
+		}
+	}
 
-// 	total, err := f.TotalTransferredAmount(req)
-// 	if err != nil {
-// 		return err
-// 	}
+	// _, err := f.TotalTransferredAmount(req)
+	// if err != nil {
+	// 	return err
+	// }
+	return nil
+	// if f.TotalMaxAmount < total {
+	// 	return errors.New("total amount of coins requested is over the limit")
+	// }
 
-// 	// if f.TotalMaxAmount < total {
-// 	// 	return errors.New("total amount of coins requested is over the limit")
-// 	// }
+}
 
-// }
+// TotalTransferredAmount returns the total transferred amount from faucet account to toAccountAddress.
+func (f Faucet) TotalTransferredAmount(req TransferRequest) (coinsTransferred sdk.Coins, err error) {
+	command := []string{"q", "txs", "--events",
+		"message.sender=" + f.faucetAccountAddress + "&transfer.recipient=" + req.AccountAddress,
+		"--page", "1", "--limit", "2", "--node", f.AppNode,
+		"--output", "json", "--chain-id", f.AppChainID}
+
+	cmdOutputBuffer := new(bytes.Buffer)
+
+	cmdStdOut := io.MultiWriter(os.Stdout, cmdOutputBuffer)
+	stepOptions := []step.Option{
+		step.Exec(f.AppBinaryName, command...),
+		step.Stderr(os.Stderr),
+		step.Stdout(cmdStdOut),
+	}
+
+	step := step.New(stepOptions...)
+
+	err = cmdrunner.New().Run(context.Background(), step)
+
+	if err != nil {
+		return nil, err
+	}
+
+	out := struct {
+		Txs []struct {
+			Logs []struct {
+				Events []struct {
+					Type  string `json:"type"`
+					Attrs []struct {
+						Key   string `json:"key"`
+						Value string `json:"value"`
+					} `json:"attributes"`
+				} `json:"events"`
+			} `json:"logs"`
+			TimeStamp string `json:"timestamp"`
+		} `json:"txs"`
+	}{}
+
+	data, err := JSONEnsuredBytes(cmdOutputBuffer.Bytes())
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+
+	var events []Event
+
+	for _, tx := range out.Txs {
+		for _, log := range tx.Logs {
+			for _, e := range log.Events {
+				var attrs []EventAttribute
+				for _, attr := range e.Attrs {
+					attrs = append(attrs, EventAttribute{
+						Key:   attr.Key,
+						Value: attr.Value,
+					})
+				}
+
+				txTime, err := time.Parse(time.RFC3339, tx.TimeStamp)
+				if err != nil {
+					return nil, err
+				}
+
+				events = append(events, Event{
+					Type:       e.Type,
+					Attributes: attrs,
+					Time:       txTime,
+				})
+			}
+		}
+	}
+
+	coinsTransferred = sdk.Coins{}
+	for _, event := range events {
+		if event.Type == "transfer" {
+			for _, attr := range event.Attributes {
+				if attr.Key == "amount" {
+					coins, err := sdk.ParseCoinsNormalized(attr.Value)
+					if err != nil {
+						return nil, err
+					}
+
+					coinsTransferred.Add(coins.Sort()...)
+
+					// TODO: Enable refresh window
+					// if amount > 0 && time.Since(event.Time) < f.limitRefreshWindow {
+					// 	totalAmount += amount
+					// }
+				}
+			}
+		}
+	}
+
+	return coinsTransferred, nil
+}
 
 func (f Faucet) Transfer(req TransferRequest) error {
 	// init variables
@@ -116,27 +219,8 @@ func (f Faucet) Transfer(req TransferRequest) error {
 	txStepOptions := []step.Option{}
 	steps := []*step.Step{}
 
-	// Check if faucet account alredy exists
-	err := f.CheckAccountAdded()
-	if err == ErrAccountDoesNotExist {
-		// Add execution step to add faucet account
-		input := &bytes.Buffer{}
-		fmt.Fprintln(input, f.FaucetAccountMnemonic)
-
-		command = []string{"keys", "add", "faucet-account", "--keyring-backend", "test", "--recover"}
-		txStepOptions = []step.Option{
-			step.Exec(f.AppBinaryName, command...),
-			step.Stderr(os.Stderr),
-			step.Stdout(os.Stdout),
-			step.Stdin(input),
-		}
-		steps = append(steps, step.New(txStepOptions...))
-	} else if err != nil {
-		return err
-	}
-
 	command = []string{
-		"tx", "bank", "send", DefaultFaucetAccountName, req.AccountAddress, strings.Join(req.Coins, ","),
+		"tx", "bank", "send", DefaultFaucetAccountName, req.AccountAddress, req.Coins.String(),
 		"--node", f.AppNode, "--output", "json", "--chain-id", f.AppChainID, "--gas-adjustment",
 		f.TxGasAdjustment, "--broadcast-mode", f.TxBroadcastMode, "--yes", "--gas-prices", f.TxGasPrices,
 		"--log_level", f.LogLevel, "--keyring-backend", "test",
@@ -149,7 +233,7 @@ func (f Faucet) Transfer(req TransferRequest) error {
 	}
 
 	steps = append(steps, step.New(txStepOptions...))
-	err = cmdrunner.New().Run(context.Background(), steps...)
+	err := cmdrunner.New().Run(context.Background(), steps...)
 
 	if err != nil {
 		return err
@@ -157,103 +241,6 @@ func (f Faucet) Transfer(req TransferRequest) error {
 
 	return nil
 }
-
-// TotalTransferredAmount returns the total transferred amount from faucet account to toAccountAddress.
-// func (f Faucet) TotalTransferredAmount(req TransferRequest) (totalAmount uint64, err error) {
-// 	command := []string{"q", "txs", "--events",
-// 		"message.sender=" + f.AccountAddress + "&transfer.recipient=" + req.AccountAddress,
-// 		"--page", "1", "--limit", "2", "--node", f.Node,
-// 		"--output", "json", "--chain-id", f.ChainID}
-
-// 	cmdOutputBuffer := new(bytes.Buffer)
-
-// 	cmdStdOut := io.MultiWriter(os.Stdout, cmdOutputBuffer)
-// 	stepOptions := []step.Option{
-// 		step.Exec(f.BinaryName, command...),
-// 		step.Stderr(os.Stderr),
-// 		step.Stdout(cmdStdOut),
-// 	}
-
-// 	step := step.New(stepOptions...)
-
-// 	err = cmdrunner.New().Run(context.Background(), step)
-
-// 	if err != nil {
-// 		return 0, err
-// 	}
-
-// 	out := struct {
-// 		Txs []struct {
-// 			Logs []struct {
-// 				Events []struct {
-// 					Type  string `json:"type"`
-// 					Attrs []struct {
-// 						Key   string `json:"key"`
-// 						Value string `json:"value"`
-// 					} `json:"attributes"`
-// 				} `json:"events"`
-// 			} `json:"logs"`
-// 			TimeStamp string `json:"timestamp"`
-// 		} `json:"txs"`
-// 	}{}
-
-// 	data, err := JSONEnsuredBytes(cmdOutputBuffer.Bytes())
-// 	if err != nil {
-// 		return 0, err
-// 	}
-// 	if err := json.Unmarshal(data, &out); err != nil {
-// 		return 0, err
-// 	}
-
-// 	var events []Event
-
-// 	for _, tx := range out.Txs {
-// 		for _, log := range tx.Logs {
-// 			for _, e := range log.Events {
-// 				var attrs []EventAttribute
-// 				for _, attr := range e.Attrs {
-// 					attrs = append(attrs, EventAttribute{
-// 						Key:   attr.Key,
-// 						Value: attr.Value,
-// 					})
-// 				}
-
-// 				txTime, err := time.Parse(time.RFC3339, tx.TimeStamp)
-// 				if err != nil {
-// 					return 0, err
-// 				}
-
-// 				events = append(events, Event{
-// 					Type:       e.Type,
-// 					Attributes: attrs,
-// 					Time:       txTime,
-// 				})
-// 			}
-// 		}
-// 	}
-
-// 	for _, event := range events {
-// 		if event.Type == "transfer" {
-// 			for _, attr := range event.Attributes {
-// 				if attr.Key == "amount" {
-// 					coins, err := sdk.ParseCoinsNormalized(attr.Value)
-// 					if err != nil {
-// 						return 0, err
-// 					}
-
-// 					amount := coins.AmountOf("utitus").Uint64()
-// 					totalAmount += amount
-
-// 					// if amount > 0 && time.Since(event.Time) < f.limitRefreshWindow {
-// 					// 	totalAmount += amount
-// 					// }
-// 				}
-// 			}
-// 		}
-// 	}
-
-// 	return totalAmount, nil
-// }
 
 // JSONEnsuredBytes ensures that encoding format for returned bytes is always
 // JSON even if the written data is originally encoded in YAML.
