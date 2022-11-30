@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -31,12 +30,6 @@ const (
 )
 
 var (
-	// ErrAccountAlreadyExists returned when an already exists account attempted to be imported.
-	ErrAccountAlreadyExists = errors.New("account already exists")
-
-	// ErrAccountDoesNotExist returned when account does not exit.
-	ErrAccountDoesNotExist = errors.New("account does not exit")
-
 	//go:embed openapi/openapi.yml.tmpl
 	bytesOpenAPISpec []byte
 
@@ -46,51 +39,6 @@ var (
 	index embed.FS
 )
 
-func (f Faucet) CheckAccountAdded() error {
-	command := []string{
-		"keys", "list", "--keyring-backend", "test", "--output", "json",
-	}
-
-	cmdOutputBuffer := new(bytes.Buffer)
-	keysListStepOptions := []step.Option{
-		step.Exec(f.AppBinaryName, command...),
-		step.Stderr(os.Stderr),
-		step.Stdout(io.MultiWriter(os.Stdout, cmdOutputBuffer)),
-	}
-
-	step := step.New(keysListStepOptions...)
-	err := cmdrunner.New().Run(context.Background(), step)
-	if err != nil {
-		return err
-	}
-
-	// Make sure that the command output is not the empty keyring message.
-	// This need to be checked because when the keyring is empty the command
-	// finishes with exit code 0 and a plain text message.
-	// This behavior was added to Cosmos SDK v0.46.2. See the link
-	// https://github.com/cosmos/cosmos-sdk/blob/d01aa5b4a8/client/keys/list.go#L37
-	if strings.TrimSpace(cmdOutputBuffer.String()) == msgEmptyKeyring {
-		return nil
-	}
-
-	data, err := JSONEnsuredBytes(cmdOutputBuffer.Bytes())
-	if err != nil {
-		return err
-	}
-	// get and decodes all accounts of the chains
-	var accounts []Account
-	if err := json.Unmarshal(data, &accounts); err != nil {
-		return err
-	}
-
-	// search for the account name
-	for _, account := range accounts {
-		if account.Name == DefaultFaucetAccountName {
-			return nil
-		}
-	}
-	return ErrAccountDoesNotExist
-}
 func (f Faucet) ValidateRequest(req TransferRequest) error {
 	if req.Coins == nil {
 		return errors.New("no coins provided")
