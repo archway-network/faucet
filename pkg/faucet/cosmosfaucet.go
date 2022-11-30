@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ghodss/yaml"
 
@@ -99,27 +100,39 @@ func (f Faucet) ValidateRequest(req TransferRequest) error {
 	}
 
 	for _, coin := range req.Coins {
-		if f.MaxCoinsPerRequest[coin.Denom].LT(coin.Amount) {
-			return fmt.Errorf("coin amount %s is greater than max allowed per request of %s", coin.String(), f.MaxCoinsPerRequest[coin.Denom].String())
+		if _, ok := f.MaxCoinsPerAccount[coin.Denom]; ok {
+			if coin.Amount.GT(f.MaxCoinsPerRequest[coin.Denom]) {
+				return fmt.Errorf("%s is greater than max allowed per request of %s%s", coin.String(), f.MaxCoinsPerRequest[coin.Denom].String(), coin.Amount.String())
+			}
+		} else {
+			return fmt.Errorf("Faucet not allowed to distribute %s", coin.Denom)
 		}
 	}
 
-	// _, err := f.TotalTransferredAmount(req)
-	// if err != nil {
-	// 	return err
-	// }
-	return nil
-	// if f.TotalMaxAmount < total {
-	// 	return errors.New("total amount of coins requested is over the limit")
-	// }
+	TotalCoinsTransferred, err := f.TotalTransferredAmount(req)
+	if err != nil {
+		return err
+	}
 
+	for _, coin := range req.Coins {
+		if _, ok := f.MaxCoinsPerAccount[coin.Denom]; ok {
+			if _, ok := TotalCoinsTransferred[coin.Denom]; ok && TotalCoinsTransferred[coin.Denom].Add(coin.Amount).GT(f.MaxCoinsPerAccount[coin.Denom]) {
+				return fmt.Errorf("quota exceeded. max %s%s allowed per account, %s%s already transferred", coin.Denom,
+					f.MaxCoinsPerAccount[coin.Denom].String(), coin.Denom, TotalCoinsTransferred[coin.Denom].String())
+			}
+		} else {
+			return fmt.Errorf("Faucet not allowed to distribute %s", coin.Denom)
+		}
+	}
+	return nil
 }
 
 // TotalTransferredAmount returns the total transferred amount from faucet account to toAccountAddress.
-func (f Faucet) TotalTransferredAmount(req TransferRequest) (coinsTransferred sdk.Coins, err error) {
+func (f Faucet) TotalTransferredAmount(req TransferRequest) (coinsTransferred map[string]sdkmath.Int, err error) {
+	//TODO: Add pagination support if there are more than 1 page of transactions
 	command := []string{"q", "txs", "--events",
 		"message.sender=" + f.faucetAccountAddress + "&transfer.recipient=" + req.AccountAddress,
-		"--page", "1", "--limit", "2", "--node", f.AppNode,
+		"--page", "1", "--limit", "50", "--node", f.AppNode,
 		"--output", "json", "--chain-id", f.AppChainID}
 
 	cmdOutputBuffer := new(bytes.Buffer)
@@ -189,7 +202,7 @@ func (f Faucet) TotalTransferredAmount(req TransferRequest) (coinsTransferred sd
 		}
 	}
 
-	coinsTransferred = sdk.Coins{}
+	coinsTransferred = map[string]sdkmath.Int{}
 	for _, event := range events {
 		if event.Type == "transfer" {
 			for _, attr := range event.Attributes {
@@ -199,12 +212,13 @@ func (f Faucet) TotalTransferredAmount(req TransferRequest) (coinsTransferred sd
 						return nil, err
 					}
 
-					coinsTransferred.Add(coins.Sort()...)
-
-					// TODO: Enable refresh window
-					// if amount > 0 && time.Since(event.Time) < f.limitRefreshWindow {
-					// 	totalAmount += amount
-					// }
+					for _, coin := range coins {
+						if _, ok := coinsTransferred[coin.Denom]; !ok {
+							coinsTransferred[coin.Denom] = coin.Amount
+						} else {
+							coinsTransferred[coin.Denom] = coinsTransferred[coin.Denom].Add(coin.Amount)
+						}
+					}
 				}
 			}
 		}
