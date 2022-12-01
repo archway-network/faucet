@@ -177,6 +177,7 @@ func (f Faucet) TotalTransferredAmount(req TransferRequest) (coinsTransferred ma
 }
 
 func (f Faucet) Transfer(req TransferRequest) error {
+	//TODO: Add checks from when transfer fails with error code 0 e.g. when using a wrong denom
 	// init variables
 	command := []string{}
 	txStepOptions := []step.Option{}
@@ -220,7 +221,9 @@ func JSONEnsuredBytes(bytes []byte) ([]byte, error) {
 
 func (f *Faucet) ResetTestKeyring(dir string) error {
 	d, err := os.Open(dir)
-	if err != nil {
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 	defer d.Close()
