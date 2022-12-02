@@ -41,6 +41,9 @@ type Faucet struct {
 	TxGasAdjustment string
 	TxBroadcastMode string
 	TxGasPrices     string
+
+	// Command runner which faucet uses to execute blockchain app commands.
+	runner *cmdrunner.Runner
 }
 
 type Account struct {
@@ -178,11 +181,20 @@ func WithTxGasPrices(p string) Option {
 
 func New(port int, options ...Option) (*Faucet, error) {
 	f := &Faucet{
-		Port: port,
+		Port:   port,
+		runner: cmdrunner.New(),
 	}
 
 	for _, opt := range options {
 		opt(f)
+	}
+
+	// If debug logs are enabled, command runner must be overridden
+	// with a debug enabled command runner
+	if f.LogLevel == "debug" {
+		f.runner = cmdrunner.New(
+			cmdrunner.EnableDebug(),
+		)
 	}
 
 	// clean up the test keyring
@@ -209,7 +221,7 @@ func New(port int, options ...Option) (*Faucet, error) {
 		step.Stdin(input),
 	}
 	steps = append(steps, step.New(txStepOptions...))
-	err := cmdrunner.New().Run(context.Background(), steps...)
+	err := f.runner.Run(context.Background(), steps...)
 
 	if err != nil {
 		return nil, err

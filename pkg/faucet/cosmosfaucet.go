@@ -19,7 +19,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ghodss/yaml"
 
-	"github.com/ignite/cli/ignite/pkg/cmdrunner"
 	"github.com/ignite/cli/ignite/pkg/cmdrunner/step"
 )
 
@@ -95,7 +94,7 @@ func (f Faucet) TotalTransferredAmount(req TransferRequest) (coinsTransferred ma
 
 	step := step.New(stepOptions...)
 
-	err = cmdrunner.New().Run(context.Background(), step)
+	err = f.runner.Run(context.Background(), step)
 
 	if err != nil {
 		return nil, err
@@ -197,7 +196,7 @@ func (f Faucet) Transfer(req TransferRequest) error {
 	}
 
 	steps = append(steps, step.New(txStepOptions...))
-	err := cmdrunner.New().Run(context.Background(), steps...)
+	err := f.runner.Run(context.Background(), steps...)
 
 	if err != nil {
 		return err
