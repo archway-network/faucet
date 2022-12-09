@@ -64,6 +64,7 @@ func (f Faucet) faucetHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		responseError(w, http.StatusInternalServerError, err)
+		return
 	}
 
 	// try performing the transfer

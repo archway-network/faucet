@@ -50,7 +50,7 @@ func (f Faucet) ValidateRequest(req TransferRequest) error {
 	for _, coin := range req.Coins {
 		if _, ok := f.MaxCoinsPerAccount[coin.Denom]; ok {
 			if coin.Amount.GT(f.MaxCoinsPerRequest[coin.Denom]) {
-				return fmt.Errorf("%s is greater than max allowed per request of %s%s", coin.String(), f.MaxCoinsPerRequest[coin.Denom].String(), coin.Amount.String())
+				return fmt.Errorf("%s is greater than max allowed per request of %s%s", coin.String(), coin.Denom, f.MaxCoinsPerRequest[coin.Denom].String())
 			}
 		} else {
 			return fmt.Errorf("Faucet not allowed to distribute %s", coin.Denom)
