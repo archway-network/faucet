@@ -78,8 +78,8 @@ func main() {
 		"Gas prices for the transaction")
 
 	flag.StringVar(&whiteListFile, "white-list-file",
-		environ.EnvGetString("WHITE_LIST_FILE", "0.025uarch"),
-		"Gas prices for the transaction")
+		environ.EnvGetString("WHITE_LIST_FILE", ""),
+		"File with list of whitelisted addresses")
 
 	flag.Parse()
 
