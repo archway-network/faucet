@@ -57,6 +57,11 @@ func (f Faucet) ValidateRequest(req TransferRequest) error {
 		}
 	}
 
+	_, ok := f.WhiteListAddresses[req.AccountAddress]
+	if !ok {
+		return fmt.Errorf("%s is not a whitelisted address", req.AccountAddress)
+	}
+
 	TotalCoinsTransferred, err := f.TotalTransferredAmount(req)
 	if err != nil {
 		return err

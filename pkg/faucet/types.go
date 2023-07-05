@@ -3,12 +3,14 @@ package faucet
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -41,6 +43,10 @@ type Faucet struct {
 	TxGasAdjustment string
 	TxBroadcastMode string
 	TxGasPrices     string
+
+	// White list file
+	WhiteListFile      string
+	WhiteListAddresses map[string]int
 
 	// Command runner which faucet uses to execute blockchain app commands.
 	runner *cmdrunner.Runner
@@ -179,6 +185,39 @@ func WithTxGasPrices(p string) Option {
 	}
 }
 
+// WithWhiteListFile
+func WithWhiteListFile(w string) Option {
+	return func(f *Faucet) {
+		f.WhiteListFile = w
+	}
+}
+
+func (f Faucet) LoadWhiteList() error {
+	csvFile, err := os.Open(f.WhiteListFile)
+	if err != nil {
+		return err
+	}
+	defer csvFile.Close()
+
+	reader := csv.NewReader(csvFile)
+	lines, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	f.WhiteListAddresses = make(map[string]int)
+	for _, line := range lines {
+		key := line[0]                      // Value from the first column
+		value, err := strconv.Atoi(line[1]) // Value from the second column
+		if err != nil {
+			return err
+		}
+		f.WhiteListAddresses[key] = value
+	}
+
+	return nil
+}
+
 func New(port int, options ...Option) (*Faucet, error) {
 	f := &Faucet{
 		Port:   port,
@@ -237,6 +276,9 @@ func New(port int, options ...Option) (*Faucet, error) {
 		return nil, err
 	}
 	f.faucetAccountAddress = account.Address
+
+	// load white list accounts
+	f.LoadWhiteList()
 
 	return f, nil
 }

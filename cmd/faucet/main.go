@@ -29,6 +29,9 @@ var (
 	txGasAdjustment string
 	txBroadcastMode string
 	txGasPrices     string
+
+	// White file of whitelist
+	whiteListFile string
 )
 
 func main() {
@@ -74,6 +77,10 @@ func main() {
 		environ.EnvGetString("TX_GAS_PRICES", "0.025uarch"),
 		"Gas prices for the transaction")
 
+	flag.StringVar(&whiteListFile, "white-list-file",
+		environ.EnvGetString("WHITE_LIST_FILE", "0.025uarch"),
+		"Gas prices for the transaction")
+
 	flag.Parse()
 
 	// Create a new faucet.
@@ -89,6 +96,7 @@ func main() {
 		faucet.WithTxGasAdjustment(txGasAdjustment),
 		faucet.WithTxBroadcastMode(txBroadcastMode),
 		faucet.WithTxGasPrices(txGasPrices),
+		faucet.WithWhiteListFile(whiteListFile),
 	)
 	if err != nil {
 		log.Fatal(err)
