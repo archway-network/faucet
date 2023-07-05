@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -192,7 +193,8 @@ func WithWhiteListFile(w string) Option {
 	}
 }
 
-func (f Faucet) LoadWhiteList() error {
+func (f *Faucet) LoadWhiteList() error {
+	log.Printf("Loading whitelist addresses from: %s", f.WhiteListFile)
 	csvFile, err := os.Open(f.WhiteListFile)
 	if err != nil {
 		return err
@@ -207,7 +209,7 @@ func (f Faucet) LoadWhiteList() error {
 
 	f.WhiteListAddresses = make(map[string]int)
 	for _, line := range lines {
-		key := line[0]                      // Value from the first column
+		key := strings.Trim(line[0], " /n") // Value from the first column
 		value, err := strconv.Atoi(line[1]) // Value from the second column
 		if err != nil {
 			return err

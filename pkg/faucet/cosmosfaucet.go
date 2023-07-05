@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -47,6 +48,11 @@ func (f Faucet) ValidateRequest(req TransferRequest) error {
 		return errors.New("no account address provided")
 	}
 
+	_, ok := f.WhiteListAddresses[strings.Trim(req.AccountAddress, " /n")]
+	if !ok {
+		return fmt.Errorf("%s is not a whitelisted address", req.AccountAddress)
+	}
+
 	for _, coin := range req.Coins {
 		if _, ok := f.MaxCoinsPerAccount[coin.Denom]; ok {
 			if coin.Amount.GT(f.MaxCoinsPerRequest[coin.Denom]) {
@@ -55,11 +61,6 @@ func (f Faucet) ValidateRequest(req TransferRequest) error {
 		} else {
 			return fmt.Errorf("Faucet not allowed to distribute %s", coin.Denom)
 		}
-	}
-
-	_, ok := f.WhiteListAddresses[req.AccountAddress]
-	if !ok {
-		return fmt.Errorf("%s is not a whitelisted address", req.AccountAddress)
 	}
 
 	TotalCoinsTransferred, err := f.TotalTransferredAmount(req)

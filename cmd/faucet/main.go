@@ -30,7 +30,7 @@ var (
 	txBroadcastMode string
 	txGasPrices     string
 
-	// White file of whitelist
+	// File of whitelist addresses
 	whiteListFile string
 )
 
