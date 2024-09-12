@@ -78,8 +78,8 @@ func (f Faucet) ValidateRequest(req TransferRequest) error {
 // TotalTransferredAmount returns the total transferred amount from faucet account to toAccountAddress.
 func (f Faucet) TotalTransferredAmount(req TransferRequest) (coinsTransferred map[string]sdkmath.Int, err error) {
 	//TODO: Add pagination support if there are more than 1 page of transactions
-	command := []string{"q", "txs", "--events",
-		"message.sender=" + f.faucetAccountAddress + "&transfer.recipient=" + req.AccountAddress,
+	command := []string{"q", "txs", "--query",
+		fmt.Sprintf("message.sender='%s' AND transfer.recipient='%s'", f.faucetAccountAddress, req.AccountAddress),
 		"--page", "1", "--limit", "50", "--node", f.AppNode,
 		"--output", "json", "--chain-id", f.AppChainID}
 
